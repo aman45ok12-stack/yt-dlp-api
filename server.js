@@ -1,25 +1,32 @@
-import express from "express";
-import { exec } from "child_process";
-import cors from "cors";
+const express = require("express");
+const YTDlpWrap = require("yt-dlp-wrap").default;
+const path = require("path");
 
 const app = express();
-app.use(cors());
-
-app.get("/download", (req, res) => {
-  const url = req.query.url;
-  if (!url) return res.status(400).json({ error: "No URL provided" });
-
-  const command = `yt-dlp -x --audio-format mp3 --get-url "${url}"`;
-
-  exec(command, (error, stdout, stderr) => {
-    if (error) {
-      return res.status(500).json({ error: stderr || error.message });
-    }
-    res.json({ audioUrl: stdout.trim() });
-  });
-});
-
 const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log(`yt-dlp API running on port ${port}`);
+
+const ytDlpWrap = new YTDlpWrap();
+
+app.get("/download", async (req, res) => {
+  const url = req.query.url;
+  if (!url) return res.status(400).json({ error: "Missing url parameter" });
+
+  try {
+    let output = "";
+    ytDlpWrap
+      .exec([url, "-f", "bestaudio", "-x", "--audio-format", "mp3", "-o", "-"])
+      .on("data", (data) => {
+        output += data.toString();
+      })
+      .on("close", () => {
+        res.send(output);
+      });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
+
+app.listen(port, () => {
+  console.log(`yt-dlp-api running on ${port}`);
+});
+
