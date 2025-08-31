@@ -1,67 +1,57 @@
-const express = require("express");
-const { spawn } = require("child_process");
+import express from "express";
+import youtubedl from "yt-dlp-exec";
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-// Endpoint to fetch video info
-app.get("/info", (req, res) => {
-  const url = req.query.url;
-  if (!url) {
-    return res.status(400).json({ error: "Missing URL parameter ?url=" });
-  }
-
-  // Run yt-dlp via python3
-  const ytdlp = spawn("python3", ["-m", "yt_dlp", "-j", url]);
-
-  let data = "";
-  let error = "";
-
-  ytdlp.stdout.on("data", (chunk) => {
-    data += chunk.toString();
-  });
-
-  ytdlp.stderr.on("data", (chunk) => {
-    error += chunk.toString();
-  });
-
-  ytdlp.on("close", (code) => {
-    if (code === 0) {
-      try {
-        const json = JSON.parse(data);
-        res.json(json);
-      } catch (err) {
-        res.status(500).json({ error: "Failed to parse yt-dlp output", details: err.message });
-      }
-    } else {
-      res.status(500).json({ error: "yt-dlp failed", details: error });
-    }
-  });
+// Health check
+app.get("/", (req, res) => {
+  res.json({ status: "yt-dlp API is running 🚀" });
 });
 
-// Endpoint to download audio
-app.get("/download", (req, res) => {
+// Get video info
+app.get("/info", async (req, res) => {
   const url = req.query.url;
   if (!url) {
-    return res.status(400).json({ error: "Missing URL parameter ?url=" });
+    return res.status(400).json({ error: "Missing url parameter" });
   }
 
-  // Run yt-dlp via python3 for audio extraction
-  const ytdlp = spawn("python3", ["-m", "yt_dlp", "-f", "bestaudio", "-o", "-", url]);
+  try {
+    const info = await youtubedl(url, {
+      dumpSingleJson: true,
+      noCheckCertificates: true,
+      noWarnings: true,
+      preferFreeFormats: true,
+    });
 
-  res.setHeader("Content-Type", "audio/mpeg");
+    res.json(info);
+  } catch (err) {
+    console.error("yt-dlp error:", err);
+    res.status(500).json({ error: "yt-dlp failed", details: err.message });
+  }
+});
 
-  ytdlp.stdout.pipe(res);
+// Download audio (mp3)
+app.get("/download/audio", async (req, res) => {
+  const url = req.query.url;
+  if (!url) {
+    return res.status(400).json({ error: "Missing url parameter" });
+  }
 
-  ytdlp.stderr.on("data", (chunk) => {
-    console.error("yt-dlp error:", chunk.toString());
-  });
+  try {
+    const output = await youtubedl(url, {
+      extractAudio: true,
+      audioFormat: "mp3",
+      audioQuality: "192K",
+      output: "-",
+    });
 
-  ytdlp.on("close", (code) => {
-    if (code !== 0) {
-      res.status(500).json({ error: "yt-dlp failed while downloading audio" });
-    }
-  });
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.send(output);
+  } catch (err) {
+    console.error("yt-dlp error:", err);
+    res.status(500).json({ error: "yt-dlp failed", details: err.message });
+  }
 });
 
 app.listen(PORT, () => {
