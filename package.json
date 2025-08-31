@@ -1,16 +1,16 @@
 {
   "name": "yt-dlp-api",
   "version": "1.0.0",
-  "description": "YouTube download API using yt-dlp",
+  "description": "A simple yt-dlp API wrapper",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "express": "^4.18.2"
-  },
-  "engines": {
-    "node": ">=16.x"
+    "express": "^4.18.2",
+    "yt-dlp-exec": "^2.0.0"
   }
 }
+
 
