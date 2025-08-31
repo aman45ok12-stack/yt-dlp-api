@@ -1,40 +1,69 @@
 const express = require("express");
-const YTDlpWrap = require("yt-dlp-wrap").default;
+const { spawn } = require("child_process");
 
 const app = express();
-const port = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 
-const ytDlpWrap = new YTDlpWrap();
-
-app.get("/", (req, res) => {
-  res.send("yt-dlp API is running ✅");
-});
-
-app.get("/info", async (req, res) => {
+// Endpoint to fetch video info
+app.get("/info", (req, res) => {
   const url = req.query.url;
-  if (!url) return res.status(400).json({ error: "Missing url parameter" });
-
-  try {
-    let data = "";
-    const ytProcess = ytDlpWrap.exec([url, "-J"]); // JSON metadata only
-
-    ytProcess.stdout.on("data", (chunk) => {
-      data += chunk.toString();
-    });
-
-    ytProcess.on("close", () => {
-      try {
-        const parsed = JSON.parse(data);
-        res.json(parsed);
-      } catch (err) {
-        res.status(500).json({ error: "Failed to parse yt-dlp output", raw: data });
-      }
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  if (!url) {
+    return res.status(400).json({ error: "Missing URL parameter ?url=" });
   }
+
+  // Run yt-dlp via python3
+  const ytdlp = spawn("python3", ["-m", "yt_dlp", "-j", url]);
+
+  let data = "";
+  let error = "";
+
+  ytdlp.stdout.on("data", (chunk) => {
+    data += chunk.toString();
+  });
+
+  ytdlp.stderr.on("data", (chunk) => {
+    error += chunk.toString();
+  });
+
+  ytdlp.on("close", (code) => {
+    if (code === 0) {
+      try {
+        const json = JSON.parse(data);
+        res.json(json);
+      } catch (err) {
+        res.status(500).json({ error: "Failed to parse yt-dlp output", details: err.message });
+      }
+    } else {
+      res.status(500).json({ error: "yt-dlp failed", details: error });
+    }
+  });
 });
 
-app.listen(port, () => {
-  console.log(`yt-dlp-api running on port ${port}`);
+// Endpoint to download audio
+app.get("/download", (req, res) => {
+  const url = req.query.url;
+  if (!url) {
+    return res.status(400).json({ error: "Missing URL parameter ?url=" });
+  }
+
+  // Run yt-dlp via python3 for audio extraction
+  const ytdlp = spawn("python3", ["-m", "yt_dlp", "-f", "bestaudio", "-o", "-", url]);
+
+  res.setHeader("Content-Type", "audio/mpeg");
+
+  ytdlp.stdout.pipe(res);
+
+  ytdlp.stderr.on("data", (chunk) => {
+    console.error("yt-dlp error:", chunk.toString());
+  });
+
+  ytdlp.on("close", (code) => {
+    if (code !== 0) {
+      res.status(500).json({ error: "yt-dlp failed while downloading audio" });
+    }
+  });
+});
+
+app.listen(PORT, () => {
+  console.log(`yt-dlp API running on port ${PORT}`);
 });
